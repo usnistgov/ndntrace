@@ -35,7 +35,7 @@ NDN-Trace is a measurement tool developed to retrieve certain information about 
 
 ### Building the NFD with the trace strategies:
 - Add the trace strategy into your NFD/daemon/fw directory 
-- Copy the content of (Single_path_tracing.txt) into your your default strategy used by your NF in the begining of the "afterreceiveInterest" trigger
+- Copy the content of (Single_path_tracing.txt) into your your default strategy used by your NFD in the begining of the "afterreceiveInterest" trigger
 - Build the daemon once more by running the following commands:
     >./waf configure
     
