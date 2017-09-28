@@ -1,7 +1,6 @@
 
 
 #include "face.hpp"
-//#include "nfdidcollector.hpp"
 #include "security/validator-null.hpp"
 #include "security/key-chain.hpp"
 #include <ndn-cxx/mgmt/nfd/controller.hpp>
@@ -11,12 +10,9 @@
 #include <ctime>
 #include <stdio.h>
 #include <boost/thread/thread.hpp>
-// JSON includes
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/prettywriter.h>
-//#include "prettywriter.h
-//#include "writer.h"
 #include <cstdio>
 
 namespace ndn {
