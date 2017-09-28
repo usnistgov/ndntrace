@@ -1,6 +1,6 @@
 
-
 #include "face.hpp"
+//#include "nfdidcollector.hpp"
 #include "security/validator-null.hpp"
 #include "security/key-chain.hpp"
 #include <ndn-cxx/mgmt/nfd/controller.hpp>
@@ -10,9 +10,12 @@
 #include <ctime>
 #include <stdio.h>
 #include <boost/thread/thread.hpp>
+// JSON includes
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/prettywriter.h>
+//#include "prettywriter.h
+//#include "writer.h"
 #include <cstdio>
 
 namespace ndn {
@@ -66,7 +69,7 @@ private:
 
 	void
 	onInterest(const InterestFilter& filter, const Interest& interest)
-	{	
+	{
 		//boost::this_thread::sleep( boost::posix_time::milliseconds(1500));
 		struct Quest r;
 		r.First_Arr = steady_clock::now(); // Record arrival time of this request
@@ -84,9 +87,8 @@ private:
 			}
 			return;
 		}
-
 		int k = (-1)*(interest.getName().size());
-		int i;		
+		int i;
 		Reqs[interest.getNonce()].p1 = interest.getName().at(k+1).toUri();
 		Reqs[interest.getNonce()].p2 = interest.getName().at(k+2).toUri();
 
@@ -105,7 +107,7 @@ private:
 				for(i=k+4; i< -2; i++){
 					v = v.toUri() + "/" + interest.getName().at(i).toUri();
 				}
-			}			
+			}
 			//adding the name to the map
 			Reqs[interest.getNonce()].Lname = v.toUri();
 			// Query the Fib manager
@@ -146,10 +148,26 @@ private:
 	void
 	onData(const Interest& interest, const Data& data)
 	{
+		double wait =0;
 		if (Reqs[interest.getNonce()].p1 == "M"){  // Trace/M/name/Key-Tid/face_id
+			Reqs[interest.getNonce()].m_reptime[getcomp(interest, 2)]=steady_clock::now();
+			steady_clock::duration time_span = Reqs[interest.getNonce()].m_reptime[getcomp(interest, 2)] - Reqs[interest.getNonce()].m_exptime[getcomp(interest, 2)];
+			double nseconds = float(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
 			std::string temp = std::string(reinterpret_cast<const char*>(data.getContent().value()), data.getContent().value_size());
-			Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]=createData(m_nfdId.toUri(),2,3, temp);
-			if(Reqs[interest.getNonce()].mhops.size()==Reqs[interest.getNonce()].m_reply.size()){				
+
+			for(std::map<std::string,steady_clock::time_point>::iterator it=Reqs[interest.getNonce()].m_reptime.begin(); it!=Reqs[interest.getNonce()].m_reptime.end(); ++it){
+				steady_clock::duration time_span =Reqs[interest.getNonce()].m_reptime[getcomp(interest, 2)]-it->second;;
+				double nseconds = float(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
+				if ((nseconds)>wait){
+					wait = nseconds;
+				}
+
+			}
+			Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]=createData(m_nfdId.toUri(),nseconds,wait, temp);
+
+			if(Reqs[interest.getNonce()].mhops.size()==Reqs[interest.getNonce()].m_reply.size()){
+
+				//cal_over(Reqs[interest.getNonce()].m_reptime, Reqs[interest.getNonce()].m_over);
 				createmulti(Reqs[interest.getNonce()].m_reply, interest);
 			}
 		}else{
@@ -181,13 +199,27 @@ private:
 	void
 	onNack(const Interest& interest, const lp::Nack& nack)
 	{
+		double wait =0;
 		if (Reqs[interest.getNonce()].p1 == "M"){
+			Reqs[interest.getNonce()].m_reptime[getcomp(interest, 2)]=steady_clock::now();
+			steady_clock::duration time_span = Reqs[interest.getNonce()].m_reptime[getcomp(interest, 2)] - Reqs[interest.getNonce()].m_exptime[getcomp(interest, 2)];
+			double nseconds = float(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
 			if ((nack.getReason()== lp::NackReason::PRODUCER_LOCAL)||(nack.getReason()== lp::NackReason::CACHE_LOCAL)){
-				Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]= createNack(m_nfdId.toUri(), 2, 3);			
+
+				///// checking wait time
+				for(std::map<std::string,steady_clock::time_point>::iterator it=Reqs[interest.getNonce()].m_reptime.begin(); it!=Reqs[interest.getNonce()].m_reptime.end(); ++it){
+					steady_clock::duration time_span =Reqs[interest.getNonce()].m_reptime[getcomp(interest, 2)]-it->second;;
+					double nseconds = float(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
+					if ((nseconds)>wait){
+						wait = nseconds;
+					}
+
+				}
+
+				///////
+				Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]= createNack(m_nfdId.toUri(), nseconds, wait);
 				if(Reqs[interest.getNonce()].mhops.size()==Reqs[interest.getNonce()].m_reply.size()){
-
 					createmulti(Reqs[interest.getNonce()].m_reply, interest);
-
 				}
 			}
 		}else{
@@ -212,7 +244,7 @@ private:
 		// Create new name, based on Interest's name
 		Name dataName(Reqs[interest.getNonce()].Oname);
 		double d = average()+extra;
-		std::string idsp = createNack(m_nfdId.toUri(), elapsedn_secs, d);		
+		std::string idsp = createNack(m_nfdId.toUri(), elapsedn_secs, d);
 		// Create Data packet
 		shared_ptr<Data> data = make_shared<Data>();
 		data->setName(dataName);
@@ -252,28 +284,29 @@ private:
 	{
 		rapidjson::Document document;
 		document.SetObject();
-		rapidjson::Document::AllocatorType& allocator = document.GetAllocator();	
+		rapidjson::Document::AllocatorType& allocator = document.GetAllocator();
 		Value i;
 		char b[100];
-		int len = sprintf(b, "%s", id.c_str());	
-		i.SetString(b, len, document.GetAllocator());		
+		int len = sprintf(b, "%s", id.c_str());
+		i.SetString(b, len, document.GetAllocator());
 		Value d(delay);
-		Value o(over);		
+		Value o(over);
 		document.AddMember("ID", i , allocator);
 		document.AddMember("delay", d, allocator);
-		document.AddMember("overhead", o, allocator); 
+		document.AddMember("overhead", o, allocator);
 		rapidjson::Document document2;
 		if ( document2.Parse<0>( s.c_str() ).HasParseError() ) {
 			std::cout << "Parsing error" << std::endl;
 		}else{
-			assert(document2.IsObject()); 
+			assert(document2.IsObject());
 			document.AddMember("next", document2.GetObject(), allocator);
-		}	
+		}
 		StringBuffer strbuf;
 		Writer<StringBuffer> writer(strbuf);
-		document.Accept(writer); 
+		document.Accept(writer);
 		return strbuf.GetString();
 	}
+
 	void
 	onTimeout(const Interest& interest)
 	{
@@ -282,25 +315,25 @@ private:
 
 
 	std::string createNack(std::string id, double delay, double over)
-	{	
+	{
 		rapidjson::Document document;
 		document.SetObject();
-		rapidjson::Document::AllocatorType& allocator = document.GetAllocator();	
+		rapidjson::Document::AllocatorType& allocator = document.GetAllocator();
 		//nfd-id
 		Value i;
 		char b[100];
 		int len = sprintf(b, "%s", id.c_str());
-		i.SetString(b, len, document.GetAllocator());		
+		i.SetString(b, len, document.GetAllocator());
 		//delay
 		Value d(delay);
-		Value o(over);		
+		Value o(over);
 		document.AddMember("ID", i , allocator);
 		document.AddMember("delay", d, allocator);
-		document.AddMember("overhead", o, allocator); 
+		document.AddMember("overhead", o, allocator);
 
 		StringBuffer strbuf;
 		Writer<StringBuffer> writer(strbuf);
-		document.Accept(writer); 
+		document.Accept(writer);
 		return strbuf.GetString();
 	}
 
@@ -325,7 +358,7 @@ private:
 			}
 			std::string aa;
 			// Create N corresponding interests
-			for(unsigned int i=0; i<Reqs[param.nonce].mhops.size(); i++){			
+			for(unsigned int i=0; i<Reqs[param.nonce].mhops.size(); i++){
 				ndn::Interest I;
 				aa = "Key-TID" + std::to_string(number());
 				ndn::Name n = "/Trace/M/"+ Reqs[param.nonce].p2 + Reqs[param.nonce].Lname+ "/" + aa + "/" + std::to_string(Reqs[param.nonce].mhops[i]) ;  // attaching the face id as x
@@ -333,12 +366,13 @@ private:
 				I.setNonce(param.nonce);
 				I.setInterestLifetime(ndn::time::milliseconds(10000));
 				I.setMustBeFresh(true);
+				Reqs[param.nonce].m_exptime[getcomp(I, 2)]=steady_clock::now();
 				a_face.expressInterest(I,
 						bind(&Tracker::onData, this,  _1, _2),
 						bind(&Tracker::onNack, this, _1, _2),
 						bind(&Tracker::onTimeout, this, _1));
-			}				
-		}, 
+			}
+		},
 
 		bind([]{ std::cout << "failure\n";}),
 		options);
@@ -355,7 +389,7 @@ private:
 	struct parameters{
 		ndn::Name name;
 		uint32_t nonce;
-	}; 
+	};
 
 	// Request Information
 	struct Quest{
@@ -369,18 +403,20 @@ private:
 		std::string Reply;
 		std::vector<uint64_t> mhops; // multipath's possible next hops
 		std::map<std::string, std::string> m_reply; //multi path replies
-
+		std::map<std::string, steady_clock::time_point> m_exptime; //multi path replies
+		std::map<std::string, steady_clock::time_point> m_reptime; //multi path replies
+		std::map<std::string, double> m_over; //multi path replies
 	};
 	// Request Information
 	struct mprocess{
 		steady_clock::time_point Express_time;
 		steady_clock::time_point Rep_time;
 		double overhead;
-		std::string Reply;		
+		std::string Reply;
 	};
-	// map to match a request (nonce) with an object of struct	
-	std::map<uint32_t, Quest> Reqs; 
-	Face a_face; 
+	// map to match a request (nonce) with an object of struct
+	std::map<uint32_t, Quest> Reqs;
+	Face a_face;
 	KeyChain m_keyChain;
 	std::string data_a;
 	std::string data_d;
@@ -477,3 +513,6 @@ main(int argc, char** argv)
 
 	return 0;
 }
+
+
+
