@@ -146,7 +146,9 @@ main(int, char**)
     conf.write_config_header('src/ndn-cxx-config.hpp', define_prefix='NDN_CXX_')
 
     # Add out custom include path for rapidjson
-    conf.env.append_value('INCLUDES', ['~/include/'])
+    conf.add_os_flags('HOME')
+    if conf.env['HOME']:
+        conf.env.append_value('INCLUDES', [conf.env['HOME'][0] + '/include/'])
 
 def build(bld):
     version(bld)
