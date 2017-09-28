@@ -1,4 +1,5 @@
 
+
 #include "face.hpp"
 //#include "nfdidcollector.hpp"
 #include "security/validator-null.hpp"
@@ -9,683 +10,474 @@
 #include <chrono>
 #include <ctime>
 #include <stdio.h>
+#include <boost/thread/thread.hpp>
+// JSON includes
+#include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/prettywriter.h>
+//#include "prettywriter.h
+//#include "writer.h"
+#include <cstdio>
 
 namespace ndn {
 
-    namespace examples {
+namespace examples {
 
-        using namespace std::chrono;
-        using ndn::nfd::Controller;
+using namespace std::chrono;
+using ndn::nfd::Controller;
+using namespace rapidjson;
 
-        typedef std::chrono::high_resolution_clock Clock;
+typedef std::chrono::high_resolution_clock Clock;
 
-        class Tracker : noncopyable
-        {
-
-            public:
-            void
-            runp()
-            {
-                a_face.setInterestFilter("/Trace",
-                bind(&Tracker::onInterest, this, _1, _2),
-                RegisterPrefixSuccessCallback(),
-                bind(&Tracker::onRegisterFailed, this, _1, _2));
-                a_face.processEvents();
-            }
-
-
-
-            private:
-
-
-            int number(){
-                static std::uniform_int_distribution<uint32_t> distribution;
-                 return distribution(getRandomGenerator());
-            }
-
-            static std::mt19937&
-                getRandomGenerator()
+class Tracker : noncopyable
 {
-  static std::mt19937 rng{std::random_device{}()};
-  return rng;
+
+public:
+	void
+	runp()
+	{
+		a_face.setInterestFilter("/Trace",
+				bind(&Tracker::onInterest, this, _1, _2),
+				RegisterPrefixSuccessCallback(),
+				bind(&Tracker::onRegisterFailed, this, _1, _2));
+		a_face.processEvents();
+	}
+
+
+
+private:
+	int number(){
+		static std::uniform_int_distribution<uint32_t> distribution;
+		return distribution(getRandomGenerator());
+	}
+
+	static std::mt19937&
+	getRandomGenerator()
+	{
+		static std::mt19937 rng{std::random_device{}()};
+		return rng;
+	}
+
+	void
+	onRegisterFailed(const Name& prefix, const std::string& reason)
+	{
+		std::cerr << "ERROR: Failed to register prefix \""
+				<< prefix << "\" in local hub's daemon (" << reason << ")"
+				<< std::endl;
+		a_face.shutdown();
+	}
+
+
+	void
+	onInterest(const InterestFilter& filter, const Interest& interest)
+	{	
+		//boost::this_thread::sleep( boost::posix_time::milliseconds(1500));
+		struct Quest r;
+		r.First_Arr = steady_clock::now(); // Record arrival time of this request
+		r.Oname = interest.getName().toUri(); // Record original name of this request
+		Reqs[interest.getNonce()]=r;
+
+		// loop check
+		for(std::vector<uint32_t>::iterator it=loop.begin() ; it !=loop.end(); ++it){
+			uint32_t nonce = *it;
+			if (interest.getNonce() == nonce){
+				return;
+			}  // if it's looped do nothing for now
+			else{
+				loop.push_back(interest.getNonce()); // else just record the nonce
+			}
+			return;
+		}
+
+		int k = (-1)*(interest.getName().size());
+		int i;		
+		Reqs[interest.getNonce()].p1 = interest.getName().at(k+1).toUri();
+		Reqs[interest.getNonce()].p2 = interest.getName().at(k+2).toUri();
+
+		if (Reqs[interest.getNonce()].p1=="M"){ // Could be from User (no face_id) or from another daemon >> what name??
+			// Get the name to trace
+			const ndn::Name c = interest.getName().at(k+3).toUri();
+			const ndn::Name nx = c.toUri() ;
+			ndn::Name v = nx.toUri();
+			// Different names according to where the interest is coming from
+			std::size_t found4 = interest.getName().at(-1).toUri().find("Key-UID");
+			if (found4!=std::string::npos){// user interest
+				for(i=k+4; i< -1; i++){
+					v = v.toUri() + "/" + interest.getName().at(i).toUri();
+				}
+			}else{// another daemon's interest
+				for(i=k+4; i< -2; i++){
+					v = v.toUri() + "/" + interest.getName().at(i).toUri();
+				}
+			}			
+			//adding the name to the map
+			Reqs[interest.getNonce()].Lname = v.toUri();
+			// Query the Fib manager
+			KeyChain x_keyChain;
+			ndn::nfd::Controller cont(a_face, x_keyChain);
+			const ndn::nfd::CommandOptions& options = {};
+			const ndn::Name& name = Reqs[interest.getNonce()].Lname;
+			query(cont, name, interest.getNonce(), options);
+		}else{
+			// process single path
+			// Enter single path section
+			const ndn::Name c = interest.getName().at(k+3).toUri();
+			const ndn::Name nx = c.toUri() ;
+			ndn::Name v = nx.toUri();
+
+			// Getting the name to lookup
+
+			for(i=k+4; i< -1; i++){
+				v = v.toUri() + "/" + interest.getName().at(i).toUri();  // The name to lookup
+			}
+			Reqs[interest.getNonce()].Lname = v.toUri();
+			ndn::Interest I;
+			ndn::Name n = "/Trace/S/"+Reqs[interest.getNonce()].p2+ v.toUri()+ "/Key-TID" + std::to_string(number()) ;
+			I.setName(n);
+			I.setNonce(interest.getNonce());
+			I.setInterestLifetime(interest.getInterestLifetime());
+			I.setMustBeFresh(true);
+			Reqs[interest.getNonce()].Express_time = steady_clock::now();
+			a_face.expressInterest(I,
+					bind(&Tracker::onData, this,  _1, _2),
+					bind(&Tracker::onNack, this, _1, _2),
+					bind(&Tracker::onTimeout, this, _1));
+
+			return;
+		}
+	}
+
+	void
+	onData(const Interest& interest, const Data& data)
+	{
+		if (Reqs[interest.getNonce()].p1 == "M"){  // Trace/M/name/Key-Tid/face_id
+			std::string temp = std::string(reinterpret_cast<const char*>(data.getContent().value()), data.getContent().value_size());
+			Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]=createData(m_nfdId.toUri(),2,3, temp);
+			if(Reqs[interest.getNonce()].mhops.size()==Reqs[interest.getNonce()].m_reply.size()){				
+				createmulti(Reqs[interest.getNonce()].m_reply, interest);
+			}
+		}else{
+			Reqs[interest.getNonce()].Reply = std::string(reinterpret_cast<const char*>(data.getContent().value()), data.getContent().value_size());
+			dataprocessing(interest);
+		}
+	}
+
+	void
+	dataprocessing(const Interest& interest){
+		// Delay time
+		steady_clock::duration time_span = Reqs[interest.getNonce()].Rep_time-Reqs[interest.getNonce()].Express_time;
+		double elapsedd_secs = double(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
+		// First overhead time
+		steady_clock::duration time_span2 = Reqs[interest.getNonce()].Express_time-Reqs[interest.getNonce()].First_Arr;
+		double extra = double(time_span2.count()) * steady_clock::period::num / steady_clock::period::den;
+		double d;
+		d =average()+extra;
+		std:: string h = Reqs[interest.getNonce()].Reply;
+		std::string data_x = createData(m_nfdId.toUri(), elapsedd_secs, d, h);
+		shared_ptr<Data> data = make_shared<Data>();
+		Name dataName(Reqs[interest.getNonce()].Oname);
+		data->setName(dataName);
+		data->setFreshnessPeriod(time::seconds(10)); // to be adjusted to the parameter in the user
+		data->setContent(reinterpret_cast<const uint8_t*>(data_x.c_str()), data_x.size());
+		m_keyChain.sign(*data);
+		a_face.put(*data);
+	}
+	void
+	onNack(const Interest& interest, const lp::Nack& nack)
+	{
+		if (Reqs[interest.getNonce()].p1 == "M"){
+			if ((nack.getReason()== lp::NackReason::PRODUCER_LOCAL)||(nack.getReason()== lp::NackReason::CACHE_LOCAL)){
+				Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]= createNack(m_nfdId.toUri(), 2, 3);			
+				if(Reqs[interest.getNonce()].mhops.size()==Reqs[interest.getNonce()].m_reply.size()){
+
+					createmulti(Reqs[interest.getNonce()].m_reply, interest);
+
+				}
+			}
+		}else{
+			if ((nack.getReason()== lp::NackReason::PRODUCER_LOCAL)||(nack.getReason()== lp::NackReason::CACHE_LOCAL)){ // expected 					nack could alsp be No route / prohibited / not supported ...
+				nackprocessing(interest);
+			}else{
+				std::cout << "Other non supported Nacks for now" << interest << std::endl;
+				return;
+			}
+
+		}
+	}
+
+	void
+	nackprocessing(const Interest& interest){
+		// delay time to get a nack (<>>strategy)
+		steady_clock::duration time_span = Reqs[interest.getNonce()].Rep_time-Reqs[interest.getNonce()].Express_time;
+		double elapsedn_secs = double(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
+		// First overhead time
+		steady_clock::duration time_span2 = Reqs[interest.getNonce()].Express_time-Reqs[interest.getNonce()].First_Arr;
+		double extra = double(time_span2.count()) * steady_clock::period::num / steady_clock::period::den;
+		// Create new name, based on Interest's name
+		Name dataName(Reqs[interest.getNonce()].Oname);
+		double d = average()+extra;
+		std::string idsp = createNack(m_nfdId.toUri(), elapsedn_secs, d);		
+		// Create Data packet
+		shared_ptr<Data> data = make_shared<Data>();
+		data->setName(dataName);
+		data->setFreshnessPeriod(time::seconds(0));
+		data->setContent(reinterpret_cast<const uint8_t*>(idsp.c_str()), idsp.size());
+		m_keyChain.sign(*data);
+		a_face.put(*data);
+	}
+
+	void createmulti(std::map<std::string, std::string> m, const Interest& interest){
+
+		rapidjson::Document document;
+		document.SetObject();
+		rapidjson::Value array(rapidjson::kArrayType);
+		rapidjson::Document::AllocatorType& allocator = document.GetAllocator();
+		for (std::map<std::string,std::string>::iterator it=m.begin(); it!=m.end(); ++it){
+			Value j;
+			char bb[1000];
+			int len = sprintf(bb, "%s", it->second.c_str());
+			j.SetString(bb, len, document.GetAllocator());
+			array.PushBack(j, allocator);
+		}
+		document.AddMember("children", array, document.GetAllocator());
+		StringBuffer strbuf;
+		Writer<StringBuffer> writer(strbuf);
+		document.Accept(writer);
+		std::cout << strbuf.GetString() << std::endl;
+		shared_ptr<Data> data = make_shared<Data>();
+		data->setName(Reqs[interest.getNonce()].Oname);
+		data->setFreshnessPeriod(time::seconds(0));
+		std::string temp = strbuf.GetString();
+		data->setContent(reinterpret_cast<const uint8_t*>(temp.c_str()), temp.size());
+		m_keyChain.sign(*data);
+		a_face.put(*data);
+	}
+	std::string createData(std::string id, double delay, double over, std::string s)
+	{
+		rapidjson::Document document;
+		document.SetObject();
+		rapidjson::Document::AllocatorType& allocator = document.GetAllocator();	
+		Value i;
+		char b[100];
+		int len = sprintf(b, "%s", id.c_str());	
+		i.SetString(b, len, document.GetAllocator());		
+		Value d(delay);
+		Value o(over);		
+		document.AddMember("ID", i , allocator);
+		document.AddMember("delay", d, allocator);
+		document.AddMember("overhead", o, allocator); 
+		rapidjson::Document document2;
+		if ( document2.Parse<0>( s.c_str() ).HasParseError() ) {
+			std::cout << "Parsing error" << std::endl;
+		}else{
+			assert(document2.IsObject()); 
+			document.AddMember("next", document2.GetObject(), allocator);
+		}	
+		StringBuffer strbuf;
+		Writer<StringBuffer> writer(strbuf);
+		document.Accept(writer); 
+		return strbuf.GetString();
+	}
+	void
+	onTimeout(const Interest& interest)
+	{
+		std::cout << "Timeout " << interest << std::endl;
+	}
+
+
+	std::string createNack(std::string id, double delay, double over)
+	{	
+		rapidjson::Document document;
+		document.SetObject();
+		rapidjson::Document::AllocatorType& allocator = document.GetAllocator();	
+		//nfd-id
+		Value i;
+		char b[100];
+		int len = sprintf(b, "%s", id.c_str());
+		i.SetString(b, len, document.GetAllocator());		
+		//delay
+		Value d(delay);
+		Value o(over);		
+		document.AddMember("ID", i , allocator);
+		document.AddMember("delay", d, allocator);
+		document.AddMember("overhead", o, allocator); 
+
+		StringBuffer strbuf;
+		Writer<StringBuffer> writer(strbuf);
+		document.Accept(writer); 
+		return strbuf.GetString();
+	}
+
+	void
+	query(Controller& controller, const ndn::Name& name, uint32_t nonce, const ndn::nfd::CommandOptions& options = {})
+	{
+		parameters param;
+		param.nonce = nonce;
+		param.name = name;
+
+		controller.fetch<ndn::nfd::FibDataset>([this, param] (const std::vector<ndn::nfd::FibEntry>& result) {
+			for (size_t prefixLen = param.name.size(); prefixLen > 0; --prefixLen) {
+				for (const ndn::nfd::FibEntry& item : result) {
+					if (item.getPrefix().size() == prefixLen && item.getPrefix().isPrefixOf(param.name)) {
+						Reqs[param.nonce].mhops.clear();
+						for (const ndn::nfd::NextHopRecord& nh : item.getNextHopRecords()) {
+							Reqs[param.nonce].mhops.push_back(nh.getFaceId());
+						};
+					}
+
+				}
+			}
+			std::string aa;
+			// Create N corresponding interests
+			for(unsigned int i=0; i<Reqs[param.nonce].mhops.size(); i++){			
+				ndn::Interest I;
+				aa = "Key-TID" + std::to_string(number());
+				ndn::Name n = "/Trace/M/"+ Reqs[param.nonce].p2 + Reqs[param.nonce].Lname+ "/" + aa + "/" + std::to_string(Reqs[param.nonce].mhops[i]) ;  // attaching the face id as x
+				I.setName(n);
+				I.setNonce(param.nonce);
+				I.setInterestLifetime(ndn::time::milliseconds(10000));
+				I.setMustBeFresh(true);
+				a_face.expressInterest(I,
+						bind(&Tracker::onData, this,  _1, _2),
+						bind(&Tracker::onNack, this, _1, _2),
+						bind(&Tracker::onTimeout, this, _1));
+			}				
+		}, 
+
+		bind([]{ std::cout << "failure\n";}),
+		options);
+
+	}
+
+	std::string
+	getcomp(const Interest& interest, int i){
+
+		return interest.getName().at(-i).toUri();;
+	}
+
+
+	struct parameters{
+		ndn::Name name;
+		uint32_t nonce;
+	}; 
+
+	// Request Information
+	struct Quest{
+		steady_clock::time_point First_Arr;
+		steady_clock::time_point Express_time;
+		steady_clock::time_point Rep_time;
+		std::string p1;
+		std::string p2;
+		std::string Oname;
+		std::string Lname;
+		std::string Reply;
+		std::vector<uint64_t> mhops; // multipath's possible next hops
+		std::map<std::string, std::string> m_reply; //multi path replies
+
+	};
+	// Request Information
+	struct mprocess{
+		steady_clock::time_point Express_time;
+		steady_clock::time_point Rep_time;
+		double overhead;
+		std::string Reply;		
+	};
+	// map to match a request (nonce) with an object of struct	
+	std::map<uint32_t, Quest> Reqs; 
+	Face a_face; 
+	KeyChain m_keyChain;
+	std::string data_a;
+	std::string data_d;
+	std::vector<uint32_t> loop;
+	steady_clock::time_point Ts;
+	steady_clock::time_point To;
+public:
+
+	float estimate(){
+		Ts = steady_clock::now(); // to estimate name creation and all
+		shared_ptr<Data> data = make_shared<Data>();
+		Name n = "/Test";
+		data->setName(n);
+		std::string stupid = "Hello Kitty";
+		data->setFreshnessPeriod(time::seconds(10));
+		data->setContent(reinterpret_cast<const uint8_t*>(stupid.c_str()), stupid.size());
+		m_keyChain.sign(*data);
+		To = steady_clock::now();
+		steady_clock::duration time_span = To - Ts;
+		float nseconds = float(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
+		return nseconds;
+	}
+
+	double
+	average(){
+		float sum =0;
+		for (int i = 0; i <1000; i++){   // average of 20 run
+			sum = sum +estimate();
+		}
+		return sum/1000;
+	}
+	void
+	getid()
+	{
+		Interest interest(Name("ndn:/localhost/nfd/fib/list"));
+		interest.setInterestLifetime(time::milliseconds(10000));
+		interest.setMustBeFresh(true);
+		a_face.expressInterest(interest,
+				bind(&Tracker::onId, this,  _1, _2),
+				bind(&Tracker::onNId, this, _1, _2),
+				bind(&Tracker::onTId, this, _1));
+
+		std::cout << "Looking for ID " << interest << std::endl;
+		// processEvents will block until the requested data received or timeout occurs
+		a_face.processEvents();
+	}
+
+	void
+	onNId(const Interest& interest, const lp::Nack& nack)
+	{
+		std::cout << "Could not retrieve the NFD ID <> Nack " << nack.getReason()<< " for interest " << interest << std::endl;
+	}
+
+	void
+	onTId(const Interest& interest)
+	{
+		std::cout << "Request for the NFD ID timed out " << std::endl;
+	}
+
+
+	void
+	onId(const Interest& interest, const Data& data)
+	{
+		const ndn::Signature& sig = data.getSignature();
+		const ndn::KeyLocator& kl = sig.getKeyLocator();
+		m_nfdId = kl.getName();
+		std::cout<< "(NFDId): " << m_nfdId.toUri() << std::endl;
+	}
+
+	Name m_nfdId;
+
+
+};
+
+}
 }
 
-
-
-
-            void
-            onRegisterFailed(const Name& prefix, const std::string& reason)
-            {
-                std::cerr << "ERROR: Failed to register prefix \""
-                << prefix << "\" in local hub's daemon (" << reason << ")"
-                << std::endl;
-                a_face.shutdown();
-            }
-
-
-            void
-            onInterest(const InterestFilter& filter, const Interest& interest)
-            {
-                Ti_a = steady_clock::now(); // time of a request arrivals
-                sso[interest.getNonce()] = steady_clock::now();
-                m_over[interest.getNonce()]=0;
-
-
-                // loop check
-                for(std::vector<uint32_t>::iterator it=loop.begin() ; it !=loop.end(); ++it){
-                        uint32_t nonce = *it;
-                        if (interest.getNonce() == nonce){
-                        return;}
-                        else{
-                        loop.push_back(interest.getNonce());
-                        }
-                return;}
-
-
-                // Store the request for the nonce
-
-                request[interest.getNonce()] = interest.getName().toUri();
-
-
-                // Extract name from interest
-
-                int s = interest.getName().size();
-                int k = (-1)*s;
-                int i;
-
-
-                std:: string p2 = interest.getName().at(k+2).toUri();
-                //std::cout << "Parameter p2 " << p2 << std::endl;
-               //
-
-                //Parsing parameters
-                if (interest.getName().at(k+1).toUri() == "M"){ // Could be from User (no face_id) or from another daemon >> what name??
-
-                    //std::cout << "Request for M" << std::endl;
-
-                    // Get the name to trace
-                    const ndn::Name c = interest.getName().at(k+3).toUri();
-                    const ndn::Name nx = c.toUri() ;
-                    ndn::Name v = nx.toUri();
-
-                    // Different names according to where the interest is coming from
-                    std::size_t found4 = interest.getName().at(-1).toUri().find("Key-UID");
-
-                    if (found4!=std::string::npos){// user interest
-
-                        key[interest.getNonce()]= interest.getName().at(-1).toUri();
-
-                            for(i=k+4; i< -1; i++){
-
-                                v = v.toUri() + "/" + interest.getName().at(i).toUri();
-
-                            }
-
-                    }else{// another daemon's interest
-
-                    key[interest.getNonce()]= interest.getName().at(-2).toUri();
-
-                            for(i=k+4; i< -2; i++){
-
-                                v = v.toUri() + "/" + interest.getName().at(i).toUri();
-
-                            }
-                    }
-
-                    //std::cout << "The name to trace just to make sure is " << v << std::endl;
-
-
-                    // Query the Fib manager
-
-                    Face face;
-                    KeyChain x_keyChain;
-                    ndn::nfd::Controller cont(face, x_keyChain);
-                    const ndn::nfd::CommandOptions& options = {};
-                    const ndn::Name& name = v;
-                    //std::cout << "The nonce " << interest.getNonce() << std::endl;
-                    query(cont, name, interest.getNonce(), options); // should store the vector for the corresponding request (nonce)
-                    face.processEvents();
-
-                    // is this a forking point or a regular node getting a multipath request
-                    if (mhops[interest.getNonce()].size()>1){
-
-                       // std::cout << "This is indeed a forking point. this interest will be M processed" << std::endl;
-                        mflag[interest.getNonce()]=true; //setting the multipath flag
-                    }
-
-
-                    mscount[interest.getNonce()]= 0; // initialization of the mscounter
-
-                        Ttemp = steady_clock::now();
-                        steady_clock::duration ts = Ttemp - Ti_a;
-
-                        double xv = double(ts.count()) * steady_clock::period::num / steady_clock::period::den;
-
-                    // Create N corresponding interests
-
-                    for(int i=0; i<mhops[interest.getNonce()].size(); i++){
-                        //for(int i=0; i<m_nexthops.size(); i++){
-
-                        //for (std::vector<uint64_t>::iterator it=m_nexthops.begin(); it!=m_nexthops.end(); ++it){
-
-                        std::string x =std::to_string(mhops[interest.getNonce()][i]); // getting the face id into a string
-
-                        ndn::Interest I;
-                        std::string aa = "Key-TID" + std::to_string(number());
-                        ndn::Name n = "/Trace/M/"+ p2 + v.toUri()+ "/" + aa + "/" + x ;  // attaching the face id as x
-                        I.setName(n);
-                        I.setNonce(interest.getNonce());
-                        I.setInterestLifetime(ndn::time::milliseconds(10000));
-                        I.setMustBeFresh(true);
-                        //std::cout << "interest " << i << " is " << I << std::endl;
-
-
-                        m_mapi[interest.getNonce()][I.getName().at(-2).toUri()] = steady_clock::now();// better record the timestamp here
-                        s_face.expressInterest(I,
-                        bind(&Tracker::onData, this,  _1, _2),
-                        bind(&Tracker::onNack, this, _1, _2),
-                        bind(&Tracker::onTimeout, this, _1));
-
-//                        s_face.processEvents();
-                    }
-                        s_face.processEvents();
-
-                    // Part two: collection of Data and Nacks
-
-                    if (mscount[interest.getNonce()] == mhops[interest.getNonce()].size()){
-
-                        // if multiple nexthops add <child>><node name=" "> some of arrivals </node></child>
-
-                        std::string collector;
-
-
-
-                 for(std::vector<node>::iterator it = nodes[interest.getNonce()].begin(); it != nodes[interest.getNonce()].end(); ++it){
-
-                        node y =*it;
-
-std::string u = "{"+m_nfdId.toUri()+"(*)"+  std::to_string(y.delay) +"(**)"+std::to_string(mean+(m_over[interest.getNonce()]-y.delay)+xv)+"}!";
-
-                 std::string uu = "<child><node name=\""+u+"\">"+ y.arr + "</node></child>";
-
-                        collector = collector + uu;
-
-                        }
-
-                        //////////////////////////////////////////////////////////////
-
-                        //if (mhops[interest.getNonce()].size()>1){
-                        //collector = "<node name=\" \" >" +  collector + "</node>";
-                        //}
-
-                        // Create Data packetild
-                        shared_ptr<Data> data = make_shared<Data>();
-                        data->setName(request[interest.getNonce()]);
-                        data->setFreshnessPeriod(time::seconds(0));
-                        data->setContent(reinterpret_cast<const uint8_t*>(collector.c_str()), collector.size());
-
-                        //std::cout << "data name " << request[interest.getNonce()] <<std::endl;
-                        //std::cout << "multipath data is " << std::string(reinterpret_cast<const char*>(data->getContent().value()), data->getContent().value_size()) << std::endl;
-
-                        // Sign Data packet with default identity
-                        m_keyChain.sign(*data);
-
-                        // Send the data through the incoming face
-                        a_face.put(*data);
-
-                    }
-
-                    return;
-
-                }else{
-
-                    // Enter single path section
-
-                    const ndn::Name c = interest.getName().at(k+3).toUri();
-                    const ndn::Name nx = c.toUri() ;
-                    ndn::Name v = nx.toUri();
-
-                    for(i=k+4; i< -1; i++){
-
-                        v = v.toUri() + "/" + interest.getName().at(i).toUri();  // The name to lookup
-
-                    }
-
-
-                    // Removing last key id and adding a new one
-
-                    //std::string sid = std::to_string(number());
-                    //std::cout << "Number? " << number()+1 <<std::endl;
-
-                    ndn::Interest I;
-                    ndn::Name n = "/Trace/S/"+p2+ v.toUri()+ "/Key-TID" + std::to_string(number()) ;
-                    //std::cout << "aa " << aa <<std::endl;
-                    //std::cout << "N name" << n <<std::endl;
-
-
-                    I.setName(n);
-                    I.setNonce(interest.getNonce());
-
-                    I.setInterestLifetime(interest.getInterestLifetime());
-                    I.setMustBeFresh(true);
-                    //std::cout << " interest received  " <<  interest.getName() << std::endl;
-                    //std::cout << " interest name  " <<  I.getName() << std::endl;
-
-                    // Express a new interest (as a consumer)  -->  we care about the Nack and timeout only -->  No data expected
-
-                    seo[interest.getNonce()] = steady_clock::now();
-
-                    smapi[interest.getNonce()] = steady_clock::now();
-
-                    s_face.expressInterest(I,
-                    bind(&Tracker::onData, this,  _1, _2),
-                    bind(&Tracker::onNack, this, _1, _2),
-                    bind(&Tracker::onTimeout, this, _1));
-
-
-
-                    // processEvents will block until the requested data received or timeout occurs
-                    s_face.processEvents();
-
-                    if (GN == true) {
-                        nackprocessing(interest);
-
-                    }
-
-                    if (GD == true) {
-                        dataprocessing(interest);
-                    }
-
-                }//end else
-
-            }
-
-            void
-            nackprocessing(const Interest& interest){
-
-                //double elapsedn_secs = double(Tn_a - Ti_a) / CLOCKS_PER_SEC;
-
-                steady_clock::duration time_span = smapr[interest.getNonce()] - smapi[interest.getNonce()];
-
-                steady_clock::duration time_span2 = seo[interest.getNonce()] - sso[interest.getNonce()];
-
-                double extra = double(time_span2.count()) * steady_clock::period::num / steady_clock::period::den;
-                double elapsedn_secs = double(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
-
-                //double elapsedn_secs = double(smapr[interest.getNonce()] - smapi[interest.getNonce()]) / CLOCKS_PER_SEC;
-
-
-                // Create new name, based on Interest's name
-                Name dataName(interest.getName());
-
-                // Fake content
-                //static const std::string seperator = "#**#";
-                std::string s = "(*)";
-                std::string idsp = "<" + m_nfdId.toUri() + s + std::to_string(elapsedn_secs) + "(**)" + std::to_string(mean+extra)+ ">!";
-
-
-                // Create Data packet
-                shared_ptr<Data> data = make_shared<Data>();
-                data->setName(dataName);
-                data->setFreshnessPeriod(time::seconds(0));
-                //std::cout << "N" << std::endl;
-                //std::cout << "Test: " << idsp << std::endl;
-                data->setContent(reinterpret_cast<const uint8_t*>(idsp.c_str()), idsp.size());
-
-                //std::cout << "******" << std::endl;
-
-                // Sign Data packet with default identity
-                m_keyChain.sign(*data);
-
-                // Send the data through the incoming face
-                a_face.put(*data);
-            }
-            void
-            dataprocessing(const Interest& interest){
-
-                //std::cout << "D " << std::endl;
-                //double elapsedd_secs = double(Td_a - Ti_a) / CLOCKS_PER_SEC;
-
-                steady_clock::duration time_span = smapr[interest.getNonce()] - smapi[interest.getNonce()];
-
-                double elapsedd_secs = double(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
-
-                steady_clock::duration time_span2 = seo[interest.getNonce()] - sso[interest.getNonce()];
-
-                double extra = double(time_span2.count()) * steady_clock::period::num / steady_clock::period::den;
-
-                //double elapsedd_secs = double(]) / CLOCKS_PER_SEC;
-
-                std::string s = "(*)";
-                std::string idsp = "<" + m_nfdId.toUri() + s + std::to_string(elapsedd_secs) + "(**)" + std::to_string(mean+extra) + ">!";
-
-                //std::cout << "data_ a  " << data_a << std::endl;
-
-                //std::cout << "idsp  " << idsp << std::endl;
-
-                data_d = idsp + data_a;
-
-                //std::cout << "Combined " << data_d << std::endl;
-
-                shared_ptr<Data> data = make_shared<Data>();
-                Name dataName(interest.getName());
-                data->setName(dataName);
-                data->setFreshnessPeriod(time::seconds(10)); // to be adjusted to the parameter in the user
-
-                data->setContent(reinterpret_cast<const uint8_t*>(data_d.c_str()), data_d.size());
-                //std::cout << "What's actually being sent : " << std::string(reinterpret_cast<const char*>(data->getContent().value()), data->getContent().value_size()) << std::endl;
-
-                m_keyChain.sign(*data);
-                a_face.put(*data);
-            }
-
-
-            void
-            onData(const Interest& interest, const Data& data)
-            {
-                Td_a = steady_clock::now();
-                smapr[interest.getNonce()]=steady_clock::now();  // for single path data timestamp
-                int s = interest.getName().size();
-                int k = (-1)*s;
-
-                if (interest.getName().at(k+1).toUri() == "M"){  // Trace/M/name/Key-Tid/face_id
-
-                    m_mapr[interest.getNonce()][interest.getName().at(-2).toUri()] = Td_a;
-
-                    /// XML /////////
-
-                     steady_clock::duration time_span = m_mapr[interest.getNonce()][interest.getName().at(-2).toUri()] - m_mapi[interest.getNonce()][interest.getName().at(-2).toUri()];
-
-                     double e = double(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
-                     if (e>m_over[interest.getNonce()]){
-                        m_over[interest.getNonce()]=e;
-                     }
-
-
-                   node n = {e, std::string(reinterpret_cast<const char*>(data.getContent().value()), data.getContent().value_size())};
-
-                   nodes[interest.getNonce()].push_back(n);
-                   mscount[interest.getNonce()]++;
-
-                 return;
-                 }else{
-
-                    GD =  true;
-                    data_a = std::string(reinterpret_cast<const char*>(data.getContent().value()), data.getContent().value_size());
-                }
-            }
-
-            void
-            onNack(const Interest& interest, const lp::Nack& nack)
-            {
-                Tn_a = steady_clock::now();
-
-                int s = interest.getName().size();
-                int k = (-1)*s;
-
-                if (interest.getName().at(k+1).toUri() == "M"){
-
-                    m_mapr[interest.getNonce()][interest.getName().at(-2).toUri()] = Tn_a;
-
-                    steady_clock::duration time_span = m_mapr[interest.getNonce()][interest.getName().at(-2).toUri()] - m_mapi[interest.getNonce()][interest.getName().at(-2).toUri()];
-
-                     double e = double(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
-
-                     if (e>m_over[interest.getNonce()]){
-                        m_over[interest.getNonce()]=e;
-                        }
-
-                     node n = {e, ""};
-                     nodes[interest.getNonce()].push_back(n);
-                     mscount[interest.getNonce()]++;
-
-                        return;
-                    }else{
-
-                        smapr[interest.getNonce()]=steady_clock::now();
-                       if ((nack.getReason()== lp::NackReason::PRODUCER_LOCAL)||(nack.getReason()== lp::NackReason::CACHE_LOCAL)){ // expected nack could alsp be No route / prohibited / not supported ...
-                            GN = true;
-                        }
-
-                    }
-                }
-
-
-
-                void
-                onTimeout(const Interest& interest)
-                {
-                    std::cout << "Timeout " << interest << std::endl;
-                }
-
-
-                // init part --> in charge of retrieving the NFD ID
-
-                public:
-                void
-                getid()
-                {
-                    Interest interest(Name("ndn:/localhost/nfd/fib/list"));
-                    interest.setInterestLifetime(time::milliseconds(10000));
-                    interest.setMustBeFresh(true);
-
-                    l_face.expressInterest(interest,
-                    bind(&Tracker::onId, this,  _1, _2),
-                    bind(&Tracker::onNId, this, _1, _2),
-                    bind(&Tracker::onTId, this, _1));
-
-                    std::cout << "Looking for ID " << interest << std::endl;
-
-                    // processEvents will block until the requested data received or timeout occurs
-                    l_face.processEvents();
-                }
-
-
-                private:
-
-                void
-                onNId(const Interest& interest, const lp::Nack& nack)
-                {
-                    std::cout << "Could not retrieve the NFD ID, received Nack with reason " << nack.getReason()
-                    << " for interest " << interest << std::endl;
-                    }
-
-                void
-                onTId(const Interest& interest)
-                {
-                    std::cout << "Request for the NFD ID timed out " << interest << std::endl;
-                    }
-
-
-                void
-                onId(const Interest& interest, const Data& data)
-                {
-                    const ndn::Signature& sig = data.getSignature();
-                    const ndn::KeyLocator& kl = sig.getKeyLocator();
-                    m_nfdId = kl.getName();
-                    std::cout<< "(NFDId): " << m_nfdId.toUri() << std::endl;
-                }
-
-
-                void
-                query(Controller& controller, const ndn::Name& name, uint32_t nonce, const ndn::nfd::CommandOptions& options = {})
-                {
-                    parameters param = {name, nonce};
-                    //param.name = name;
-                    //param.nonce = nonce;
-
-                    controller.fetch<ndn::nfd::FibDataset>(
-
-                    [this, param] (const std::vector<ndn::nfd::FibEntry>& result) {
-
-                        for (size_t prefixLen = param.name.size(); prefixLen > 0; --prefixLen) {
-
-                            for (const ndn::nfd::FibEntry& item : result) {
-
-                                if (item.getPrefix().size() == prefixLen && item.getPrefix().isPrefixOf(param.name)) {
-
-                                    mhops[param.nonce].clear();
-
-                                    for (const ndn::nfd::NextHopRecord& nh : item.getNextHopRecords()) {
-
-                                        mhops[param.nonce].push_back(nh.getFaceId()); // Adding a ((once, vector) couple to the map
-                                    }
-
-                                    //std::cout << " " <<'\n';
-
-                                    return;
-
-                                }
-                            }
-                        }
-
-                    },
-                    bind([]{ std::cout << "To do something here\n";}),
-                    options);
-                }
-
-
-                public:
-                float estimate(){
-
-
-
-                    Ts = steady_clock::now(); // to estimate name creation and all
-
-                    shared_ptr<Data> data = make_shared<Data>();
-
-                    Name n = "/Test";
-                    data->setName(n);
-                    data->setFreshnessPeriod(time::seconds(10));
-                    data->setContent(reinterpret_cast<const uint8_t*>(data_d.c_str()), data_d.size());
-
-                    //Ts = steady_clock::now();  just the signature
-                    m_keyChain.sign(*data);
-                    To = steady_clock::now();
-
-                    //std::cout << "Signature estimation " << elapsedd_secs << std::endl;
-
-                    steady_clock::duration time_span = To - Ts;
-                    float nseconds = float(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
-
-                    //float elapsedd_secs = float(To - Ts) / CLOCKS_PER_SEC;
-                    return nseconds;
-
-                }
-
-
-                private:
-                struct parameters{
-                    const ndn::Name& name;
-                    uint32_t nonce;
-                };
-                Face a_face;  // with a being the first arrived request
-                Face s_face;  // with s being the sending face
-                Face l_face;
-                KeyChain m_keyChain;
-                steady_clock::time_point Ti_a;
-                steady_clock::time_point Tn_a;
-                steady_clock::time_point Td_a;
-                steady_clock::time_point Ttemp;
-
-                steady_clock::time_point Ts;
-                steady_clock::time_point To;
-                std::string data_a;
-                std::string data_d;
-
-                //std::map<std::string, clock_t> mapi; //interest sending time
-                //std::map<std::string, clock_t> mapr; // Nack or Dt
-
-                int mcounter = 0;
-
-                std::map<uint32_t, std::vector<uint64_t>> mhops; // map for multipath next hops (nonce, list of nexthops)
-                std::map<uint32_t, int> mscount; // map for multipath counter of the faces, satisfied or nor?!
-                std::map<uint32_t, bool> mflag; // flag that indicates if a request is multipath or not per request (nonce, flag)
-                std::map<uint32_t, int> m_counter; // counter that shows if per request, we retrieved an equal number of replies to the number of the vailable faces for it
-                std::map<uint32_t, std::map<std::string,steady_clock::time_point>> m_mapi; // map of multipath interests (nonce, (Key-ID, Ti))
-                std::map<uint32_t, std::map<std::string,steady_clock::time_point>> m_mapr; // map of multipath replies (nonce, (Key-ID, Tr))
-
-                std::map<uint32_t, steady_clock::time_point> smapr; //single path reply
-                std::map<uint32_t, steady_clock::time_point> smapi; //single path request
-
-                std::map<uint32_t, std::string> mcollect;
-                std::map<uint32_t, std::map<std::string,std::string>> m_data;
-                std::map<uint32_t, std::string> request;
-                std::map<uint32_t, std::string> key;
-                std::map<uint32_t, steady_clock::time_point> sso;
-                std::map<uint32_t, steady_clock::time_point> seo;
-                std::map<uint32_t, double> m_over;
-                std::vector<uint32_t> loop;
-                public:
-                bool GN;
-                bool GD;
-                float mean = 0;
-                Name m_nfdId;
-
-                struct node{
-                        double delay;
-                        std::string arr;
-                        };
-
-                std::map<uint32_t, std::vector<node>> nodes;
-
-            };
-
-       } // namespace examples
-    } // namespace ndn
-
-
-
-    int
-    main(int argc, char** argv)
-    {
-        static bool wasExecuted = false;
-
-        ndn::examples::Tracker track;
-
-        float sum =0;
-
-        for (int i = 0; i <20; i++){   // average of 20 run
-
-        sum = sum + track.estimate();
-
-        std::cout << track.estimate() <<std::endl;
-        }
-
-        track.mean = sum/20;
-
-        std::cout << "Average of " << std::to_string(track.mean)<< std::endl;
-
-
-        if (!wasExecuted){
-
-            try {
-                track.getid();
-            }
-            catch (const std::exception& e) {
-                std::cerr << "ERROR: " << e.what() << std::endl;
-            }
-
-            wasExecuted = true;
-
-        }
-
-
-        track.GN = false;
-        track.GD = false;
-
-
-        try {
-
-            track.runp();
-        }
-        catch (const std::exception& e) {
-            std::cerr << "ERROR: " << e.what() << std::endl;
-        }
-
-
-
-        return 0;
-    }
-
-
+int
+main(int argc, char** argv)
+{
+	ndn::examples::Tracker track;
+	track.average();
+	bool wasExecuted = false;
+	if (!wasExecuted){
+		track.getid();
+	}
+
+	try {
+		track.runp();
+	}
+	catch (const std::exception& e) {
+		std::cerr << "ERROR: " << e.what() << std::endl;
+	}
+
+	return 0;
+}
