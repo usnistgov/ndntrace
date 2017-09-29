@@ -17,12 +17,8 @@
 namespace ndn {
 namespace examples {
 
-using std::string;
-using namespace std::chrono;
-using namespace rapidxml;
-using namespace rapidjson;
 using namespace std;
-
+using namespace rapidjson;
 
 class Client : noncopyable
 {
