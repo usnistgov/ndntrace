@@ -1,6 +1,4 @@
-// #include <ndn-cxx/face.hpp>
 #include "face.hpp"
-//#include "nfdidcollector.hpp"
 #include "security/validator-null.hpp"
 #include <stdio.h>
 #include <map>
