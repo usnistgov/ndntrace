@@ -48,13 +48,11 @@ NDN-Trace is a measurement tool developed to retrieve certain information about 
     - Run trace_daemon on every NDN node.
     - On the tracing node run the client:
     
-    > trace_client -n <NAME> [-s|-m] [-p|-c|-a] [-C] [-t TIMEOUT] [-r COUNT] where:
+    > trace_client -n <NAME> [-s|-m] [-p|-c|-a] where:
     
-      - -n specifies the traced name prefix. This is the only mandatory parameter
-      - -s and -m choose between single-path and multi-path tracing,
-      - -p|-c|-a indicates the type of tracing session: -p to trace a producer application, -c to find a cached copy, -a (the default)    for either of them.
-      - -t indicates the timeout after which a trace request expires.
-      - -r specifies the number of times that a trace request is retransmitted in case a timeout happens.
+      - -n specifies the traced name prefix. This is the only mandatory parameter.
+      - -s and -m choose between single-path and multi-path tracing.
+      - -p|-c indicates the type of tracing session: -p to trace a producer application, -c to find a cached copy.
 
 
 
