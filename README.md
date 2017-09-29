@@ -10,7 +10,7 @@ NDN-Trace is a measurement tool developed to retrieve certain information about 
 
 ### Prerequisits
 - Install VERSION = "0.5.0" of [ndn-cxx](https://github.com/named-data/ndn-cxx) library and its prerequisites. Please see Getting Started with ndn-cxx for how to install ndn-cxx.
-- Install the NDN daemon [NFD](https://github.com/named-data/NFD) VERSION = "0.5.0". 
+- Install the NDN daemon [NFD](https://github.com/named-data/NFD), VERSION = "0.5.0". 
 - Clone [Rapidjson](https://github.com/Tencent/rapidjson) directory into your home in a new folder named "include".
 
 ### Building ndn-cxx with the trace programs:
