@@ -9,8 +9,8 @@ NDN-Trace is a measurement tool developed to retrieve certain information about 
 - Abdella Battou
 
 ### Prerequisits
-- Install the [ndn-cxx](https://github.com/named-data/ndn-cxx) library and its prerequisites. Please see Getting Started with ndn-cxx for how to install ndn-cxx.
-- Install the NDN daemon [NFD](https://github.com/named-data/NFD). 
+- Install VERSION = "0.5.0" of [ndn-cxx](https://github.com/named-data/ndn-cxx) library and its prerequisites. Please see Getting Started with ndn-cxx for how to install ndn-cxx.
+- Install the NDN daemon VERSION = "0.5.0" [NFD](https://github.com/named-data/NFD). 
 - Clone [Rapidjson](https://github.com/Tencent/rapidjson) directory into your home in a new folder named "include".
 
 ### Building ndn-cxx with the trace programs:
