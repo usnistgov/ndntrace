@@ -21,7 +21,7 @@ The paper that describes the protocol in details was published in [ACM ICN 2017]
 
      > git checkout tags/NFD-0.5.0
      
-- Clone [Rapidjson](https://github.com/Tencent/rapidjson) directory into your home in a new folder named "include".
+- Clone [Rapidjson](https://github.com/Tencent/rapidjson) into your home in a new folder named "include".
 
 
 ### Building ndn-cxx with the trace programs:
