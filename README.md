@@ -38,10 +38,15 @@ The paper that describes the protocol in details was published in [ACM ICN 2017]
     
     >sudo ./waf install
 
-### Building the NFD with the trace strategies:
-- Add the trace strategy into your NFD/daemon/fw directory 
-- Copy the content of (Single_path_tracing.txt) into your your default strategy used by your NFD in the begining of the "afterreceiveInterest" trigger
-- Build the daemon once more by running the following commands:
+### Building the NFD with the trace strategy components:
+
+The steps below provide guidance to integrate Trace changes into the ASF strategy as well as thebest route strategy:
+
+- Open NFD directory
+- From ndntrace/patches, apply the patches bestroutecpp.patch bestroutehpp.patch inside NFD/daemon/fw. To include NdnTrace changes to the best route strategy.
+- From ndntrace/patches, apply the patches asfcpp.patch asfhpp.patch inside NFD/daemon/fw. To include NdnTrace changes to the ASF strategy.
+- Build the daemon once more to include the changes by running the following commands:
+
     >./waf configure
     
     >./waf
