@@ -13,7 +13,10 @@ The paper that describes the protocol in details was published in [ACM ICN 2017]
 - Abdella Battou
 
 ### Prerequisits
-- Install VERSION = "0.5.0" of [ndn-cxx](https://github.com/named-data/ndn-cxx) library and its prerequisites. Please see Getting Started with ndn-cxx for how to install ndn-cxx.
+- Install VERSION = "0.5.0" of [ndn-cxx](https://github.com/named-data/ndn-cxx) library and its prerequisites. Please see Getting Started with ndn-cxx for how to install ndn-cxx. Or if you a different version of ndn-cxx, use the following command (inside ndn-cxx) to get the required version:
+
+     > git checkout tags/NFD-0.5.0
+    
 - Install the NDN daemon [NFD](https://github.com/named-data/NFD), VERSION = "0.5.0". 
 - Clone [Rapidjson](https://github.com/Tencent/rapidjson) directory into your home in a new folder named "include".
 
