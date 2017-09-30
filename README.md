@@ -7,7 +7,7 @@ The paper that describes the protocol in details was published in [ACM ICN 2017]
 
 
 ### Authors:
-- [Siham Khoussi](siham.khoussi@nist.gov)
+- Siham Khoussi     siham.khoussi@nist.gov
 - Davide Pesavento
 - Lotfi Benmohamed
 - Abdella Battou
