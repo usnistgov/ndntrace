@@ -23,20 +23,15 @@ The paper that describes the protocol in details was published in [ACM ICN 2017]
      
 - Clone [Rapidjson](https://github.com/Tencent/rapidjson) directory into your home in a new folder named "include".
 
+
 ### Building ndn-cxx with the trace programs:
 
-- Clone ndntrace into your home directory
-- Copy the two programs "trace_daemon" and "trace_client" into ndn-cxx/examples
-- Add the two nack source and header files into ndn-cxx/src/lp repository
-- Copy the wscript from ndntrace into ndn-cxx to replace the old one (used to point out the location of rapidjson header files) or simply add these two lines to the script:
+- Clone ndntrace into your home directory.
+- from ndntrace/patches, apply the patch ws.patch inside ndn-cxx.
+- Copy the two programs "trace_daemon" and "trace_client" into ndn-cxx/examples.
+- from ndntrace/patches, apply the patch nackcpp.patch and nackhpp.patch inside ndn-cxx/src/lp.
+- To build ndn-cxx with the new changes run the following commands:
 
-     >conf.add_os_flags('HOME')
-   
-     >if conf.env['HOME']:
-   
-     >conf.env.append_value('INCLUDES', [conf.env['HOME'][0] + '/include/'])  
-
-- Inside ndn-cxx run the following commands:
     >./waf configure --with-examples
     
     >./waf
