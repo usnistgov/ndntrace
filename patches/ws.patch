@@ -1,0 +1,64 @@
+--- ndn-cxx/wscript	2017-09-29 23:33:44.086899577 -0400
++++ wscript	2017-09-25 14:21:53.034107000 -0400
+@@ -5,7 +5,7 @@
+ 
+ VERSION = "0.5.0"
+ APPNAME = "ndn-cxx"
+-PACKAGE_BUGREPORT = "http://redmine.named-data.net/projects/ndn-cxx"
++PACKAGE_BUGREPORT = "https://redmine.named-data.net/projects/ndn-cxx"
+ PACKAGE_URL = "http://named-data.net/doc/ndn-cxx/"
+ GIT_TAG_PREFIX = "ndn-cxx-"
+ 
+@@ -68,8 +68,7 @@
+ 
+     conf.load(['compiler_cxx', 'gnu_dirs', 'c_osx',
+                'default-compiler-flags', 'compiler-features', 'type_traits',
+-               'pch', 'sanitizers', 'osx-security',
+-               'boost', 'cryptopp', 'openssl', 'sqlite3',
++               'pch', 'osx-security', 'boost', 'cryptopp', 'openssl', 'sqlite3',
+                'doxygen', 'sphinx_build'])
+ 
+     conf.env['WITH_TESTS'] = conf.options.with_tests
+@@ -104,8 +103,8 @@
+     conf.check_openssl(mandatory=True, atleast_version=0x10001000) # 1.0.1
+ 
+     USED_BOOST_LIBS = ['system', 'filesystem', 'date_time', 'iostreams',
+-                       'regex', 'program_options', 'chrono', 'random',
+-                       'thread', 'log', 'log_setup']
++                       'regex', 'program_options', 'chrono', 'thread',
++                       'log', 'log_setup']
+ 
+     if conf.env['WITH_TESTS']:
+         USED_BOOST_LIBS += ['unit_test_framework']
+@@ -115,7 +114,7 @@
+     if conf.env.BOOST_VERSION_NUMBER < 105400:
+         Logs.error("Minimum required boost version is 1.54.0")
+         Logs.error("Please upgrade your distribution or install custom boost libraries" +
+-                    " (http://redmine.named-data.net/projects/nfd/wiki/Boost_FAQ)")
++                    " (https://redmine.named-data.net/projects/nfd/wiki/Boost_FAQ)")
+         return
+ 
+     if not conf.options.with_sqlite_locking:
+@@ -131,6 +130,8 @@
+     # Loading "late" to prevent tests to be compiled with profiling flags
+     conf.load('coverage')
+ 
++    conf.load('sanitizers')
++
+     conf.define('SYSCONFDIR', conf.env['SYSCONFDIR'])
+ 
+     if not conf.env.enable_static:
+@@ -144,9 +145,12 @@
+     # config file and will be added using compiler directives in the command line.
+     conf.write_config_header('src/ndn-cxx-config.hpp', define_prefix='NDN_CXX_')
+ 
++    # Add out custom include path for rapidjson
++    conf.env.append_value('INCLUDES', ['~/include/'])
++
+ def build(bld):
+     version(bld)
+-
++        
+     bld(features="subst",
+         name='version',
+         source='src/version.hpp.in',
