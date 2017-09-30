@@ -53,6 +53,19 @@ The steps below provide guidance to integrate Trace changes into the ASF strateg
     
     >sudo ./waf install
 
+To use NdnTrace on different/customized strategies, follow these steps:
+
+- Change the field "YourDefaultStrategyHere" from strategy_components.hpp into the name of your strategy. Then copy it's content into it.
+- Copy the content of strategy_component.cpp into your own strategy and call "Trace" function from within "afterReceiveInterest".
+- Initialize "m_forwarder" in the constructer of your strategy class.
+- Build the NFD with the above changes:
+
+    >./waf configure
+    
+    >./waf
+    
+    >sudo ./waf install
+
 ### Usage:
     - Set an alias to call ./trace_daemon or ./trace_client from ndn-cxx/build/examples to trace_daemon and trace_client respectively.
     - Run trace_daemon on every NDN node.
