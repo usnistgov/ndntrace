@@ -1,0 +1,20 @@
+--- nack-header.hpp	2017-09-29 23:34:23.442898406 -0400
++++ new.hpp	2017-03-06 12:50:57.395914000 -0500
+@@ -40,7 +40,9 @@
+   NONE = 0,
+   CONGESTION = 50,
+   DUPLICATE = 100,
+-  NO_ROUTE = 150
++  NO_ROUTE = 150,
++  PRODUCER_LOCAL = 200,
++  CACHE_LOCAL = 250
+ };
+ 
+ std::ostream&
+@@ -90,4 +92,4 @@
+ } // namespace lp
+ } // namespace ndn
+ 
+-#endif // NDN_CXX_LP_NACK_HEADER_HPP
+\ No newline at end of file
++#endif // NDN_CXX_LP_NACK_HEADER_HPP
