@@ -3,7 +3,7 @@
 NDN-Trace is a measurement tool developed to retrieve certain information about an NDN network (RTTs, paths to a name, topology).
 The paper that describes the protocol in details was published in [ACM ICN 2017](http://conferences.sigcomm.org/acm-icn/2017/).    
 
-  [Link to access the paper](https://github.com/named-data/ndn-cxx)
+  [Link to access the paper](http://conferences.sigcomm.org/acm-icn/2017/proceedings/icn17-86.pdf)
 
 
 ### Authors:
