@@ -3,7 +3,7 @@
 NDN-Trace is a measurement tool developed to retrieve certain information about an NDN network (RTTs, paths to a name, topology).
 The paper that describes the protocol in details was published in [ACM ICN 2017](http://conferences.sigcomm.org/acm-icn/2017/).    
 
-[Link to access the paper](https://github.com/named-data/ndn-cxx)
+     [Link to access the paper](https://github.com/named-data/ndn-cxx)
 
 
 ### Authors:
@@ -27,9 +27,9 @@ The paper that describes the protocol in details was published in [ACM ICN 2017]
 ### Building ndn-cxx with the trace programs:
 
 - Clone ndntrace into your home directory.
-- from ndntrace/patches, apply the patch ws.patch inside ndn-cxx.
+- From ndntrace/patches, apply the patch ws.patch inside ndn-cxx.
 - Copy the two programs "trace_daemon" and "trace_client" into ndn-cxx/examples.
-- from ndntrace/patches, apply the patch nackcpp.patch and nackhpp.patch inside ndn-cxx/src/lp.
+- From ndntrace/patches, apply the patch nackcpp.patch and nackhpp.patch inside ndn-cxx/src/lp.
 - To build ndn-cxx with the new changes run the following commands:
 
     >./waf configure --with-examples
@@ -53,7 +53,7 @@ The paper that describes the protocol in details was published in [ACM ICN 2017]
     - Run trace_daemon on every NDN node.
     - On the tracing node run the client:
     
-    > trace_client -n <NAME> [-s|-m] [-p|-c|-a] where:
+    > trace_client -n <NAME> [-s|-m] [-p|-c] where:
     
       - -n specifies the traced name prefix. This is the only mandatory parameter.
       - -s and -m choose between single-path and multi-path tracing.
