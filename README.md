@@ -30,6 +30,7 @@ The paper that describes the protocol in details was published in [ACM ICN 2017]
 - From ndntrace/patches, apply the patch ws.patch inside ndn-cxx.
 - Copy the two programs "trace_daemon" and "trace_client" into ndn-cxx/examples.
 - From ndntrace/patches, apply the patch nackcpp.patch and nackhpp.patch inside ndn-cxx/src/lp.
+- Apply the patch ws.patch to the wscript in ndn-cxx.
 - To build ndn-cxx with the new changes run the following commands:
 
     >./waf configure --with-examples
