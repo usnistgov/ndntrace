@@ -68,9 +68,9 @@ To use NdnTrace on different/customized strategies, follow these steps:
     >sudo ./waf install
 
 ### Usage:
-    - Set an alias to call ./trace_daemon or ./trace_client from ndn-cxx/build/examples to trace_daemon and trace_client respectively.
+    - run the trace_client and trace_daemon from ndn-cxx/build/examples:
     - Run trace_daemon on every NDN node.
-    - On the tracing node run the client:
+    - On the tracing node run the client with
     
     > trace_client -n <NAME> [-s|-m] [-p|-c] where:
     
