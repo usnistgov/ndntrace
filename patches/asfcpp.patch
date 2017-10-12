@@ -1,15 +1,29 @@
---- asf-strategy.cpp	2017-09-29 23:51:21.578926000 -0400
-+++ new/asf-strategy.cpp	2017-09-30 00:00:24.658854000 -0400
-@@ -24,6 +24,7 @@
-  */
+--- asf-strategy.cpp	2017-10-12 13:56:31.233358000 -0400
++++ new.cpp	2017-10-12 13:53:08.441354668 -0400
+@@ -1,6 +1,6 @@
+ /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+-/*
+- * Copyright (c) 2014-2017,  Regents of the University of California,
++/**
++ * Copyright (c) 2014-2016,  Regents of the University of California,
+  *                           Arizona Board of Regents,
+  *                           Colorado State University,
+  *                           University Pierre & Marie Curie, Sorbonne University,
+@@ -33,53 +33,211 @@
+ namespace asf {
  
- #include "asf-strategy.hpp"
-+#include "algorithm.hpp"
+ NFD_LOG_INIT("AsfStrategy");
+-NFD_REGISTER_STRATEGY(AsfStrategy);
  
- #include "core/logger.hpp"
++const Name AsfStrategy::STRATEGY_NAME("ndn:/localhost/nfd/strategy/asf/%FD%01");
+ const time::milliseconds AsfStrategy::RETX_SUPPRESSION_INITIAL(10);
+ const time::milliseconds AsfStrategy::RETX_SUPPRESSION_MAX(250);
  
-@@ -43,12 +44,174 @@
-   : Strategy(forwarder, name)
++NFD_REGISTER_STRATEGY(AsfStrategy);
++
+ AsfStrategy::AsfStrategy(Forwarder& forwarder, const Name& name)
+-  : Strategy(forwarder)
++  : Strategy(forwarder, name)
    , m_measurements(getMeasurements())
    , m_probing(m_measurements)
 +  , m_forwarder(forwarder)
@@ -17,8 +31,22 @@
                        RetxSuppressionExponential::DEFAULT_MULTIPLIER,
                        RETX_SUPPRESSION_MAX)
  {
+-  ParsedInstanceName parsed = parseInstanceName(name);
+-  if (!parsed.parameters.empty()) {
+-    BOOST_THROW_EXCEPTION(std::invalid_argument("AsfStrategy does not accept parameters"));
+-  }
+-  if (parsed.version && *parsed.version != getStrategyName()[-1].toVersion()) {
+-    BOOST_THROW_EXCEPTION(std::invalid_argument(
+-      "AsfStrategy does not support version " + std::to_string(*parsed.version)));
+-  }
+-  this->setInstanceName(makeInstanceName(name, getStrategyName()));
  }
  
+-const Name&
+-AsfStrategy::getStrategyName()
+-{
+-  static Name strategyName("/localhost/nfd/strategy/asf/%FD%02");
+-  return strategyName;
 +
 +void
 +AsfStrategy::notfound(const Face& inFace, const shared_ptr<pit::Entry>& pitEntry, const Interest& interest){           
@@ -32,9 +60,9 @@
 +	}else{
 +		M_ForwardIt(inFace, interest, pitEntry, name);
 +	}
-+}
-+
-+void
+ }
+ 
+ void
 +AsfStrategy::found(const Face& inFace, const shared_ptr<pit::Entry>& pitEntry, const Interest& interest, const Data& data){
 +
 +	NFD_LOG_DEBUG("Traced name is cached");
@@ -112,27 +140,31 @@
 +
 +void
 +AsfStrategy::S_ForwardIt(const Face& inFace, const Interest& interest, const shared_ptr<pit::Entry>& pitEntry, const ndn::Name name){
++
 +	// Access to the Forwarder's FIB
 +	const Fib& fib = m_forwarder.getFib();                    
 +	// FIB lookup with name
 +	const fib::Entry& fibEntry = fib.findLongestPrefixMatch(name);                                    
 +	// Getting faces for nexthops??
 +	const fib::NextHopList& nexthops = fibEntry.getNextHops();
-+	/// This part is for sending                    
-+	for (fib::NextHopList::const_iterator it = nexthops.begin(); it != nexthops.end(); ++it) {                        
-+		if (it->getFace().getScope()== ndn::nfd::FACE_SCOPE_LOCAL){                                                       
-+			lp::NackHeader nackHeader;
-+			nackHeader.setReason(lp::NackReason::PRODUCER_LOCAL);                                                       
-+			this->sendNack(pitEntry, inFace, nackHeader);                            
-+			this->rejectPendingInterest(pitEntry);
-+			return;                           
-+		}else{                          
-+			this->sendInterest(pitEntry, it->getFace(), interest);                       
-+		}
-+		return;                        
-+	}
-+}
 +
++          if (nexthops.size() == 0) {
++            sendNoRouteNack(inFace, interest, pitEntry);
++            this->rejectPendingInterest(pitEntry);
++            return;
++          }
++
++          Face* faceToUse = getBestFaceForForwarding(fibEntry, interest, inFace);
++
++          if (faceToUse == nullptr) {
++            sendNoRouteNack(inFace, interest, pitEntry);
++            this->rejectPendingInterest(pitEntry);
++            return;
++          }
++
++          NFD_LOG_TRACE("Forwarding interest to face: " << faceToUse->getId());
++          forwardInterest(interest, fibEntry, pitEntry, *faceToUse);
++}
 +
 +const ndn::Name
 +AsfStrategy::GetLookupName(const Interest& interest){                 
@@ -163,10 +195,7 @@
 +
 +void 
 +AsfStrategy::Trace(const Face& inFace, const Interest& interest, const shared_ptr<pit::Entry>& pitEntry){
-+	std::size_t found3 = interest.getName().toUri().find("Key-TID");
-+	std::size_t found2 = interest.getName().toUri().find("/Trace");
-+
-+	if ((found2!=std::string::npos)&&(found3!=std::string::npos)&&(inFace.getScope() == ndn::nfd::FACE_SCOPE_LOCAL)){
++	
 +		int k = (-1)*interest.getName().size();                
 +		// if it's a multipath interest check               
 +		if (interest.getName().at(k+1).toUri()=="M"){
@@ -176,56 +205,80 @@
 +		if (interest.getName().at(k+1).toUri()=="S"){              
 +			single_process(inFace, interest, pitEntry);       
 +		} 
-+	}
++	
 +}
 +
 +
- void
++void
  AsfStrategy::afterReceiveInterest(const Face& inFace, const Interest& interest,
                                    const shared_ptr<pit::Entry>& pitEntry)
-@@ -65,6 +228,8 @@
+ {
+   // Should the Interest be suppressed?
+-  RetxSuppressionResult suppressResult = m_retxSuppression.decidePerPitEntry(*pitEntry);
++  RetxSuppression::Result suppressResult = m_retxSuppression.decide(inFace, interest, *pitEntry);
+ 
+   switch (suppressResult) {
+-  case RetxSuppressionResult::NEW:
+-  case RetxSuppressionResult::FORWARD:
++  case RetxSuppression::NEW:
++  case RetxSuppression::FORWARD:
+     break;
+-  case RetxSuppressionResult::SUPPRESS:
++  case RetxSuppression::SUPPRESS:
+     NFD_LOG_DEBUG(interest << " from=" << inFace.getId() << " suppressed");
      return;
    }
  
-+Trace(inFace, interest, pitEntry);
++
++        std::size_t found3 = interest.getName().toUri().find("Key-TID");
++	std::size_t found2 = interest.getName().toUri().find("/Trace");
++	if ((found2!=std::string::npos)&&(found3!=std::string::npos)&&(inFace.getScope() == ndn::nfd::FACE_SCOPE_LOCAL)){
++                Trace(inFace, interest, pitEntry);
++                return;
++         }
++                 
 +
    const fib::Entry& fibEntry = this->lookupFib(*pitEntry);
    const fib::NextHopList& nexthops = fibEntry.getNextHops();
  
-@@ -89,9 +254,6 @@
-     Face* faceToProbe = m_probing.getFaceToProbe(inFace, interest, fibEntry, *faceToUse);
+@@ -97,8 +255,6 @@
+     return;
+   }
  
-     if (faceToProbe != nullptr) {
--      NFD_LOG_TRACE("Sending probe for " << fibEntry.getPrefix()
--                                         << " to FaceId: " << faceToProbe->getId());
+-  NFD_LOG_TRACE("Forwarding interest to face: " << faceToUse->getId());
 -
-       bool wantNewNonce = true;
-       forwardInterest(interest, fibEntry, pitEntry, *faceToProbe, wantNewNonce);
-       m_probing.afterForwardingProbe(fibEntry, interest);
-@@ -140,7 +302,17 @@
-                              Face& outFace,
-                              bool wantNewNonce)
- {
--  this->sendInterest(pitEntry, outFace, wantNewNonce);
-+  if (wantNewNonce) {
-+    //Send probe: interest with new Nonce
-+    Interest probeInterest(interest);
-+    probeInterest.refreshNonce();
-+    NFD_LOG_TRACE("Sending probe for " << probeInterest << probeInterest.getNonce()
-+                                       << " to FaceId: " << outFace.getId());
-+    this->sendInterest(pitEntry, outFace, probeInterest);
-+  }
-+  else {
-+    this->sendInterest(pitEntry, outFace, interest);
-+  }
+   forwardInterest(interest, fibEntry, pitEntry, *faceToUse);
  
-   FaceInfo& faceInfo = m_measurements.getOrCreateFaceInfo(fibEntry, interest, outFace);
+   // If necessary, send probe
+@@ -125,17 +281,14 @@
+   }
  
-@@ -219,7 +391,7 @@
+   // Record the RTT between the Interest out to Data in
+-  FaceInfo* faceInfo = namespaceInfo->get(inFace.getId());
+-  if (faceInfo == nullptr) {
+-    return;
+-  }
+-  faceInfo->recordRtt(pitEntry, inFace);
++  FaceInfo& faceInfo = namespaceInfo->get(inFace.getId());
++  faceInfo.recordRtt(pitEntry, inFace);
+ 
+   // Extend lifetime for measurements associated with Face
+-  namespaceInfo->extendFaceInfoLifetime(*faceInfo, inFace);
++  namespaceInfo->extendFaceInfoLifetime(faceInfo, inFace);
+ 
+-  if (faceInfo->isTimeoutScheduled()) {
+-    faceInfo->cancelTimeoutEvent(data.getName());
++  if (faceInfo.isTimeoutScheduled()) {
++    faceInfo.cancelTimeoutEvent(data.getName());
+   }
+ }
+ 
+@@ -246,8 +399,7 @@
    for (const fib::NextHop& hop : fibEntry.getNextHops()) {
      Face& hopFace = hop.getFace();
  
--    if (hopFace.getId() == inFace.getId()) {
+-    if ((hopFace.getId() == inFace.getId() && hopFace.getLinkType() != ndn::nfd::LINK_TYPE_AD_HOC) ||
+-         wouldViolateScope(inFace, interest, hopFace)) {
 +    if (hopFace.getId() == inFace.getId() || wouldViolateScope(inFace, interest, hopFace)) {
        continue;
      }
