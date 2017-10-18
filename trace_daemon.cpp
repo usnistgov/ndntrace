@@ -1,9 +1,10 @@
 
-#include "face.hpp"
-#include "security/validator-null.hpp"
-#include "security/key-chain.hpp"
+
 #include <ndn-cxx/mgmt/nfd/controller.hpp>
 #include <ndn-cxx/mgmt/nfd/fib-entry.hpp>
+#include <ndn-cxx/face.hpp>
+#include <ndn-cxx/security/validator-null.hpp>
+#include <ndn-cxx/security/key-chain.hpp>
 #include <map>
 #include <chrono>
 #include <ctime>
@@ -173,7 +174,7 @@ private:
 			steady_clock::duration T =Reqs[interest.getNonce()].m_exptime[getcomp(interest, 2)]- Reqs[interest.getNonce()].First_Arr;
 			double DelayToSend = float(T.count()) * steady_clock::period::num / steady_clock::period::den;
 
-			Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]=createData(getcomp(m_nfdId,2),nseconds,wait+DelayToSend, temp);
+			Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]=createData(interest, getcomp(m_nfdId,2),nseconds,wait+DelayToSend, temp);
 			if(Reqs[interest.getNonce()].mhops.size()==Reqs[interest.getNonce()].m_reply.size()){
 				createmulti(Reqs[interest.getNonce()].m_reply, interest);
 			}
@@ -196,7 +197,7 @@ private:
 		double d;
 		d =average()+extra;
 		std:: string h = Reqs[interest.getNonce()].Reply;
-		std::string data_x = createData(getcomp(m_nfdId, 2), elapsedd_secs, d, h);
+		std::string data_x = createData(interest, getcomp(m_nfdId, 2), elapsedd_secs, d, h);
 		shared_ptr<Data> data = make_shared<Data>();
 		Name dataName(Reqs[interest.getNonce()].Oname);
 		data->setName(dataName);
@@ -222,7 +223,7 @@ private:
 						wait = nseconds;
 					}
 				}
-				Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]= createNack(getcomp(m_nfdId,2), nseconds, wait);
+				Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]= createNack(interest,getcomp(m_nfdId,2), nseconds, wait);
 				if(Reqs[interest.getNonce()].mhops.size()==Reqs[interest.getNonce()].m_reply.size()){
 					createmulti(Reqs[interest.getNonce()].m_reply, interest);
 				}
@@ -250,7 +251,7 @@ private:
 		// Create new name, based on Interest's name
 		Name dataName(Reqs[interest.getNonce()].Oname);
 		double d = average()+extra;
-		std::string idsp = createNack(getcomp(m_nfdId,2), elapsedn_secs, d);
+		std::string idsp = createNack(interest, getcomp(m_nfdId,2), elapsedn_secs, d);
 		// Create Data packet
 		shared_ptr<Data> data = make_shared<Data>();
 		data->setName(dataName);
@@ -270,7 +271,7 @@ private:
 		m_keyChain.sign(*data);
 		a_face.put(*data);
 	}
-	std::string createData(std::string id, double delay, double over, std::string s)
+	std::string createData(const Interest& interest, std::string id, double delay, double over, std::string s)
 	{
 		rapidjson::Document document;
 		document.SetObject();
@@ -283,7 +284,16 @@ private:
 		Value o(over);
 		document.AddMember("Id", i , allocator);
 		document.AddMember("delay", d, allocator);
-		document.AddMember("overhead", o, allocator);
+		
+		Reqs[interest.getNonce()].E = steady_clock::now();
+		steady_clock::duration time_span2 = Reqs[interest.getNonce()].E - Reqs[interest.getNonce()].Rep_time;
+		double extra = double(time_span2.count()) * steady_clock::period::num / steady_clock::period::den;
+	        
+	        double ov = over+extra;
+	        Value o2(ov);
+		
+		document.AddMember("overhead", o2, allocator);
+		
 		rapidjson::Document document2;
 		if ( document2.Parse<0>( s.c_str() ).HasParseError() ) {
 			std::cout << "Parsing error" << std::endl;
@@ -346,7 +356,7 @@ private:
 	}
 
 
-	std::string createNack(std::string id, double delay, double over)
+	std::string createNack(const Interest& interest, std::string id, double delay, double over)
 	{
 		rapidjson::Document document;
 		document.SetObject();
@@ -358,15 +368,23 @@ private:
 		i.SetString(b, len, document.GetAllocator());
 		//delay
 		Value d(delay);
-		Value o(over);
+		
 		document.AddMember("Id", i , allocator);
 		document.AddMember("delay", d, allocator);
+		
+		
+		Reqs[interest.getNonce()].E = steady_clock::now();
+		steady_clock::duration time_span2 = Reqs[interest.getNonce()].E - Reqs[interest.getNonce()].Rep_time;
+		double extra = double(time_span2.count()) * steady_clock::period::num / steady_clock::period::den;
+	        
+	        double ov = over+extra;
+	        Value o(ov);
 		document.AddMember("overhead", o, allocator);
 
 		StringBuffer strbuf;
 		Writer<StringBuffer> writer(strbuf);
 		document.Accept(writer);
-		std::cout << " Created nack " << strbuf.GetString() << '\n';
+		//std::cout << " Created nack " << strbuf.GetString() << '\n';
 		return strbuf.GetString();
 	}
 
@@ -429,6 +447,8 @@ private:
 		steady_clock::time_point First_Arr;
 		steady_clock::time_point Express_time;
 		steady_clock::time_point Rep_time;
+		steady_clock::time_point E;
+		//steady_clock::time_point E2;
 		std::string p1;
 		std::string p2;
 		std::string Oname;
@@ -546,6 +566,3 @@ main(int argc, char** argv)
 
 	return 0;
 }
-
-
-
