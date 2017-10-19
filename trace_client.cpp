@@ -144,8 +144,8 @@ private:
 	getarray(std::string s){
 		rapidjson::Document document; //root
 		if ( document.Parse<0>( s.c_str() ).HasParseError() ) {
-			std::cout << "Parsing error" << std::endl;
-
+			return "Parsing error";
+			
 		}else{
 			if(document.HasMember("next")){
 				const Value& next = document["next"];
@@ -153,9 +153,9 @@ private:
 				StringBuffer strbuf;
 				Writer<StringBuffer> writer(strbuf);
 				next.Accept(writer);
-				std::cout << "hmm "<<strbuf.GetString() <<std::endl;
-				return strbuf.GetString();
+				std::string s = strbuf.GetString();
 			}
+			return s;
 		}
 	}
 
