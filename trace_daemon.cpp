@@ -1,5 +1,3 @@
-
-
 #include <ndn-cxx/mgmt/nfd/controller.hpp>
 #include <ndn-cxx/mgmt/nfd/fib-entry.hpp>
 #include <ndn-cxx/face.hpp>
@@ -52,6 +50,17 @@ private:
 		return rng;
 	}
 
+        std::string
+	getcomp(const Interest& interest, int i){
+		return interest.getName().at(-i).toUri();;
+	}
+	
+	std::string
+	getcomp(const ndn::Name& n, int i){
+		return n.at(-i).toUri();;
+	}
+	
+	
 	void
 	onRegisterFailed(const Name& prefix, const std::string& reason)
 	{
@@ -182,6 +191,8 @@ private:
 
 			Reqs[interest.getNonce()].Reply = std::string(reinterpret_cast<const char*>(data.getContent().value()), data.getContent().value_size());
 			Reqs[interest.getNonce()].Rep_time = steady_clock::now();
+			
+			
 			dataprocessing(interest);
 		}
 	}
@@ -192,10 +203,10 @@ private:
 		steady_clock::duration time_span = Reqs[interest.getNonce()].Rep_time-Reqs[interest.getNonce()].Express_time;
 		double elapsedd_secs = double(time_span.count()) * steady_clock::period::num / steady_clock::period::den;
 		// First overhead time
-		steady_clock::duration time_span2 = Reqs[interest.getNonce()].Express_time-Reqs[interest.getNonce()].First_Arr;
-		double extra = double(time_span2.count()) * steady_clock::period::num / steady_clock::period::den;
+		steady_clock::duration time_span2 = Reqs[interest.getNonce()].Express_time-Reqs[interest.getNonce()].First_Arr;	
+		double extra = double(time_span2.count()) * steady_clock::period::num / steady_clock::period::den;		
 		double d;
-		d =average()+extra;
+		d =mean+extra;
 		std:: string h = Reqs[interest.getNonce()].Reply;
 		std::string data_x = createData(interest, getcomp(m_nfdId, 2), elapsedd_secs, d, h);
 		shared_ptr<Data> data = make_shared<Data>();
@@ -205,6 +216,13 @@ private:
 		data->setContent(reinterpret_cast<const uint8_t*>(data_x.c_str()), data_x.size());
 		m_keyChain.sign(*data);
 		a_face.put(*data);
+		
+		
+		Reqs[interest.getNonce()].Ef = steady_clock::now(); 
+		steady_clock::duration tim = Reqs[interest.getNonce()].Ef-Reqs[interest.getNonce()].First_Arr;
+		double elaps = double(tim.count()) * steady_clock::period::num / steady_clock::period::den;
+		
+		std::cout << "Time it took from receiving an interest to sending a data back " << elaps << '\n';
 	}
 	void
 	onNack(const Interest& interest, const lp::Nack& nack)
@@ -250,7 +268,7 @@ private:
 		double extra = double(time_span2.count()) * steady_clock::period::num / steady_clock::period::den;
 		// Create new name, based on Interest's name
 		Name dataName(Reqs[interest.getNonce()].Oname);
-		double d = average()+extra;
+		double d = mean+extra;
 		std::string idsp = createNack(interest, getcomp(m_nfdId,2), elapsedn_secs, d);
 		// Create Data packet
 		shared_ptr<Data> data = make_shared<Data>();
@@ -430,13 +448,6 @@ private:
 
 	}
 
-	std::string
-	getcomp(const Interest& interest, int i){
-
-		return interest.getName().at(-i).toUri();;
-	}
-
-
 	struct parameters{
 		ndn::Name name;
 		uint32_t nonce;
@@ -448,7 +459,7 @@ private:
 		steady_clock::time_point Express_time;
 		steady_clock::time_point Rep_time;
 		steady_clock::time_point E;
-		//steady_clock::time_point E2;
+		steady_clock::time_point Ef;
 		std::string p1;
 		std::string p2;
 		std::string Oname;
@@ -476,6 +487,7 @@ private:
 	std::vector<uint32_t> loop;
 	steady_clock::time_point Ts;
 	steady_clock::time_point To;
+	
 public:
 
 	float estimate(){
@@ -496,10 +508,10 @@ public:
 	double
 	average(){
 		float sum =0;
-		for (int i = 0; i <1000; i++){   // average of 20 run
+		for (int i = 0; i <100; i++){
 			sum = sum +estimate();
 		}
-		return sum/1000;
+		return sum/100;
 	}
 	void
 	getid()
@@ -540,7 +552,7 @@ public:
 	}
 
 	Name m_nfdId;
-
+	double mean =0;
 
 };
 
@@ -551,7 +563,8 @@ int
 main(int argc, char** argv)
 {
 	ndn::examples::Tracker track;
-	track.average();
+	
+	track.mean=track.average();
 	bool wasExecuted = false;
 	if (!wasExecuted){
 		track.getid();
