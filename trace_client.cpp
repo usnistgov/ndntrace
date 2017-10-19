@@ -16,8 +16,9 @@
 namespace ndn {
 namespace examples {
 
-using namespace std;
 using namespace rapidjson;
+using namespace std;
+
 
 class Client : noncopyable
 {
@@ -25,9 +26,9 @@ public:
 	void
 	run(std::string name, int life, std::string p1, std::string p2)
 	{
-		std::string sid = std::to_string(number());
-		std::string aa = "Key-UID" + sid;
-		ndn::Name n = "/Trace/" + p1 + "/" + p2 + "/" + name + "/" + aa ;
+		std::string n = "/Trace/" + p1 + "/" + p2 + name + "/" + "Key-UID" + std::to_string(number());
+		ndn::Name nm;
+		nm.append(n.c_str());
 		ndn::Interest interest;
 		interest.setName(n);
 		int x = life*1000;
@@ -65,11 +66,11 @@ private:
 			std::cout << "       Localhost to: " << std::endl;
 			std::cout << "                     " << std::endl;
 			node a = collected[0];
-			for (int index = 1; index < collected.size(); ++index){
+			for (unsigned int index = 1; index < collected.size(); ++index){
 				node  k = collected[index];
-				float f = (a.delay-k.delay-sum(index, interest.getNonce()))*1000;
+				float f = (a.delay-k.delay-sum(index, interest.getNonce()));
 				std::string pp = collected[index].Id;
-				std::cout << "                 " <<index << "   " << pp << "   " << f << std::endl;
+				std::cout << "                 " <<index << "   " << pp << "   " << f << " seconds" << std::endl;
 			}
 			std::cout << "                     " << std::endl;
 			return;
@@ -85,7 +86,7 @@ private:
 			std::cout << "       Localhost to: " << std::endl;
 			std::cout << "                     " << std::endl;
 			node a = vpath[1];
-			for (int index = 2; index < vpath.size(); ++index){
+			for (unsigned int index = 2; index < vpath.size(); ++index){
 				node  k = vpath[index];
 				float f = (a.delay-k.delay-sum(index, interest.getNonce()))*1000;
 				std::string pp = vpath[index].Id;
@@ -120,8 +121,7 @@ private:
 	void
 	onNack(const Interest& interest, const lp::Nack& nack)
 	{
-		std::cout << "received Nack with reason " << nack.getReason()
-            																		  << " for interest " << interest << std::endl;
+		std::cout << "received Nack with reason " << nack.getReason() << " for interest " << interest << std::endl;
 	}
 
 	void
@@ -309,7 +309,7 @@ main(int argc, char** argv)
 	std::string p1;
 	std::string p2;
 	std::string name;
-	int life;
+	int life = 4;
 	bool path = false;
 	bool dest = false;
 
