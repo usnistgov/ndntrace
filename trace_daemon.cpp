@@ -177,7 +177,7 @@ private:
 			steady_clock::duration T =Reqs[interest.getNonce()].m_exptime[getcomp(interest, 2)]- Reqs[interest.getNonce()].First_Arr;
 			double DelayToSend = float(T.count()) * steady_clock::period::num / steady_clock::period::den;
 
-			Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]=createData(interest, m_nfdId.toUri(),nseconds,wait+DelayToSend, temp);
+			Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]=createData(interest, Dname ,nseconds,wait+DelayToSend, temp);
 			if(Reqs[interest.getNonce()].mhops.size()==Reqs[interest.getNonce()].m_reply.size()){
 				createmulti(Reqs[interest.getNonce()].m_reply, interest);
 			}
@@ -202,7 +202,7 @@ private:
 		double d;
 		d =mean+extra;
 		std:: string h = Reqs[interest.getNonce()].Reply;
-		std::string data_x = createData(interest, m_nfdId.toUri(), elapsedd_secs, d, h);
+		std::string data_x = createData(interest, Dname, elapsedd_secs, d, h);
 		shared_ptr<Data> data = make_shared<Data>();
 		Name dataName(Reqs[interest.getNonce()].Oname);
 		data->setName(dataName);
@@ -228,7 +228,7 @@ private:
 						wait = nseconds;
 					}
 				}
-				Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]= createNack(interest,m_nfdId.toUri(), nseconds, wait);
+				Reqs[interest.getNonce()].m_reply[getcomp(interest, 2)]= createNack(interest,Dname, nseconds, wait);
 				if(Reqs[interest.getNonce()].mhops.size()==Reqs[interest.getNonce()].m_reply.size()){
 					createmulti(Reqs[interest.getNonce()].m_reply, interest);
 				}
@@ -256,7 +256,7 @@ private:
 		// Create new name, based on Interest's name
 		Name dataName(Reqs[interest.getNonce()].Oname);
 		double d = mean+extra;
-		std::string idsp = createNack(interest, m_nfdId.toUri(), elapsedn_secs, d);
+		std::string idsp = createNack(interest, Dname, elapsedn_secs, d);
 		// Create Data packet
 		shared_ptr<Data> data = make_shared<Data>();
 		data->setName(dataName);
@@ -500,46 +500,9 @@ public:
 		}
 		return sum/100;
 	}
-	void
-	getid()
-	{
-		Interest interest(Name("ndn:/localhost/nfd/fib/list"));
-		interest.setInterestLifetime(time::milliseconds(10000));
-		interest.setMustBeFresh(true);
-		a_face.expressInterest(interest,
-				bind(&Tracker::onId, this,  _1, _2),
-				bind(&Tracker::onNId, this, _1, _2),
-				bind(&Tracker::onTId, this, _1));
-
-		std::cout << "Looking for ID " << interest << std::endl;
-		// processEvents will block until the requested data received or timeout occurs
-		a_face.processEvents();
-	}
-
-	void
-	onNId(const Interest& interest, const lp::Nack& nack)
-	{
-		std::cout << "Could not retrieve the NFD ID <> Nack " << nack.getReason()<< " for interest " << interest << std::endl;
-	}
-
-	void
-	onTId(const Interest& interest)
-	{
-		std::cout << "Request for the NFD ID timed out " << std::endl;
-	}
-
-
-	void
-	onId(const Interest& interest, const Data& data)
-	{
-		const ndn::Signature& sig = data.getSignature();
-		const ndn::KeyLocator& kl = sig.getKeyLocator();
-		m_nfdId = kl.getName();
-		std::cout<< "(NFDId): " << m_nfdId.toUri() << std::endl;
-	}
-
-	Name m_nfdId;
+	
 	double mean =0;
+	std::string Dname;
 
 };
 
@@ -549,13 +512,21 @@ public:
 int
 main(int argc, char** argv)
 {
-	ndn::examples::Tracker track;
-	
-	track.mean=track.average();
-	bool wasExecuted = false;
-	if (!wasExecuted){
-		track.getid();
+	std::string Dname;
+	int c ;
+	while( ( c = getopt (argc, argv, "n:") ) != -1 )
+	{
+		switch(c)
+		{
+		case 'n':
+			Dname = optarg;
+			break;
+		}
 	}
+
+	ndn::examples::Tracker track;
+	track.mean=track.average();
+	track.Dname = Dname;
 
 	try {
 		track.runp();
